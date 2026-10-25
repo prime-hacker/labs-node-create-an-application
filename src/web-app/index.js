@@ -1,12 +1,12 @@
-require("dotenv").config();
-const express = require("express");
-const session = require("express-session");
-const createError = require("http-errors");
-const cookieParser = require("cookie-parser");
-const logger = require("morgan");
-const path = require("path");
-const { createServer } = require("http");
-
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const createError = require('http-errors');
+const cookieParser = require('cookie-parser');
+const logger = require('morgan');
+const path = require('path');
+const { createServer } = require('http');
+const { auth, requiresAuth } = require('express-openid-connect');
 
 const {
   checkUrl,
@@ -17,18 +17,18 @@ const {
   CLIENT_SECRET, // Auth0 Web App Client Secret
   SESSION_SECRET, // Cookie Encryption Key
   PORT,
-} = require("./env-config");
+} = require('./env-config');
 
 const app = express();
 
 app.use(checkUrl());
-app.set("views", path.join(__dirname, "views"));
-app.set("view engine", "pug");
-app.use(logger("combined"));
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'pug');
+app.use(logger('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(
   session({
@@ -38,21 +38,35 @@ app.use(
   })
 );
 
+app.use(
+  auth({
+    authorizationParams: {
+      response_type: 'code',
+      audience: API_URL,
+    },
+    secret: SESSION_SECRET,
+    auth0Logout: true,
+    baseURL: APP_URL,
+    issuerBaseURL: ISSUER_BASE_URL,
+    authRequired: false,
+    clientID: CLIENT_ID,
+  })
+);
 const expenses = [
   {
     date: new Date(),
-    description: "Pizza for a Coding Dojo session.",
+    description: 'Pizza for a Coding Dojo session.',
     value: 102,
   },
   {
     date: new Date(),
-    description: "Coffee for a Coding Dojo session.",
+    description: 'Coffee for a Coding Dojo session.',
     value: 42,
   },
 ];
 
-app.get("/", async (req, res) => {
-  res.render("home", {
+app.get('/', async (req, res) => {
+  res.render('home', {
     user: req.oidc && req.oidc.user,
     total: expenses.reduce((accum, expense) => accum + expense.value, 0),
     count: expenses.length,
@@ -60,9 +74,20 @@ app.get("/", async (req, res) => {
 });
 
 // 👇 add requiresAuth middlware to these private routes  👇
+app.get('/user', requiresAuth(), async (req, res) => {
+  const accessToken = req.oidc?.accessToken;
 
-app.get("/user", async (req, res) => {
-  res.render("user", {
+  console.log({
+    accessTokenType: typeof accessToken,
+    properties: accessToken ? Object.keys(accessToken) : [],
+    tokenType: typeof accessToken?.token,
+    tokenLength: accessToken?.token?.length,
+    jwtLike:
+      typeof accessToken?.token === 'string' &&
+      accessToken.token.split('.').length === 3,
+  });
+
+  res.render('user', {
     user: req.oidc && req.oidc.user,
     id_token: req.oidc && req.oidc.idToken,
     access_token: req.oidc && req.oidc.accessToken,
@@ -70,8 +95,8 @@ app.get("/user", async (req, res) => {
   });
 });
 
-app.get("/expenses", async (req, res, next) => {
-  res.render("expenses", {
+app.get('/expenses', requiresAuth(), async (req, res, next) => {
+  res.render('expenses', {
     user: req.oidc && req.oidc.user,
     expenses,
   });
@@ -89,7 +114,7 @@ app.use(function (err, req, res, next) {
 
   // render the error page
   res.status(err.status || 500);
-  res.render("error", {
+  res.render('error', {
     user: req.oidc && req.oidc.user,
   });
 });
